@@ -1,0 +1,15 @@
+# Ambiente virtuale
+.venv/
+venv/
+
+# Cache Python
+__pycache__/
+*.pyc
+
+# Segreti
+.env
+
+*.db
+*.json
+!output_json/esempio_dati.json
+chat.txt
