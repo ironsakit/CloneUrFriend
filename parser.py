@@ -2,11 +2,16 @@ from datetime import datetime
 import json
 
 # --------------- CONFIGURATION SECTION ------------------  IMPORTANT
+import os
+os.makedirs("output_json", exist_ok=True)  # in caso la cartella non esiste la crea, (exists_ok=True evita l'errore in caso la cartella esista già)
 
 FILE_CHAT = "data/chat.txt"         # Path to the exported WhatsApp chat file
-YOU = "TargetName"             # Exact name of the person to clone
-EXCLUDED_PEOPLE = ["Bot", "Meta AI"]  # People to completely ignore
-DISCARD = ["https", "spam", "promo"]    # Words/links to discard messages
+YOU = "NameTarget"             # Exact name of the person to clone
+EXCLUDED_PEOPLE = ["Fede T.", "Meta AI"]  # People to completely ignore
+DISCARD = ["🔴 FLASH", "omesso", "omessa", "sticker non incluso", "https",
+ "❗️", "Questo messaggio è stato eliminato.", "ha aggiunto",
+ "ha rimosso", "è uscito", "ha cambiato", "Contatto"]    # Words/links to discard messages
+OUTPUT = f"output_json/pairs_{YOU}.json"
 
 # ------------------ FILTERING FUNCTION -------------------
 
@@ -65,16 +70,14 @@ for row in rows:
     # 4. Create Stimuli -> Reaction pair
     if author == YOU and lasts:
         delta = (ts - lasts[-1]["ts"]).total_seconds()
-        # If the response is within 30s and the last message isn't already from YOU
-        if delta <= 30 and not lasts[-1]["text"].startswith("(you):"):
+        if delta <= 180 and lasts[-1]["author"] != YOU:
             pairs.append({
                 "stimuli": [last["text"] for last in lasts],
                 "reaction": msg
             })
 
     # 5. Update message history
-    label = "(you)" if author == YOU else author
-    lasts.append({"ts": ts, "text": f"{label}: {msg}"})
+    lasts.append({"ts": ts, "author": author, "text": f"{author}: {msg}"})
 
     # Keep at most the last 3 messages
     if len(lasts) > 3:
@@ -82,7 +85,7 @@ for row in rows:
 
 # ---------------------- SAVE RESULTS ------------------------------
 
-with open("output_json/Stimuli_Reactions.json", "w", encoding="utf-8") as f:
+with open(OUTPUT, "w", encoding="utf-8") as f:
     json.dump(pairs, f, ensure_ascii=False, indent=2)
 
-print(f"Completed! Saved {len(pairs)} conversation pairs in 'Stimuli&Reactions.json'.")
+print(f"Completed! Saved {len(pairs)} conversation pairs in '{OUTPUT}'.")

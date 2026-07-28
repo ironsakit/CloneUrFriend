@@ -1,60 +1,65 @@
 import json
-import random
-import re
-
+import numpy as np
 import ollama
 
-YOU = "TargetName"
-CHARACTERISTIC = ""
-YOUR_MODEL = ""
+YOU = "NameTarget"
+CHARACTERISTIC = f"""Sei {YOU}, uno studente universitario di 20 anni. Stai chattando in un gruppo WhatsApp con i tuoi amici.
 
-with open("output_json/Stimuli_Reactions.json", "r", encoding="utf-8") as f:
-    PAIRS = json.load(f)
+DEVI ASSOLUTAMENTE rispettare queste regole di scrittura:
+- Scrivi TUTTO in minuscolo, non usare MAI le maiuscole, nemmeno a inizio frase o per i nomi.
+- Niente virgole o punti, punteggiatura inesistente.
+- Rispondi con frasi cortissime, spesso senza verbo (es. "si vabbè", "non so", "ci sta").
+- Usa parole banalissime, linguaggio da strada/chat.
+- PARLA SOLO ED ESCLUSIVAMENTE IN ITALIANO. Vietato usare lo slang americano o parole inglesi (no "bro", no "dude", no "no way").
+- NON usare mai parole formali come "inoltre", "tuttavia", "quindi".
+- NON fare liste e NON fare la morale.
+- Genera SOLO ed ESCLUSIVAMENTE il testo del tuo messaggio. NON inserire mai il tuo nome, prefissi (es. "{YOU}:") o etichette.
+- Inoltre non mettere mai '|' nelle tue frasi"""
+YOUR_MODEL = "gemma2:9b"
+MODELLO_EMBED = "bge-m3"
+CHOOSE_INPUT = f"input/indice_{YOU}.json"
 
-def retrieval(question):
+with open(CHOOSE_INPUT, "r", encoding="utf-8") as f:
+    INDICE = json.load(f)
 
-    STOPWORD = {"il", "lo", "la", "i", "gli", "le", "un", "una", "di", "a", "da",
-                "in", "con", "su", "per", "tra", "fra", "e", "o", "ma", "che",
-                "non", "hai", "ho", "sei", "sono", "è", "al", "del", "come",
-                "cosa", "mi", "ti", "si", "ci", "vi", "se", "poi", "anche", "sta", "stai",
-                "fatto", "fare", "dai", "già", "più", "tutto", "quando", "dove", "perché"}
+# prendiamo ogni chiave "embedding" di ogni coppia nell'indice, la inseriamo in una lista che diventa un array numpy, ovvero una matrice (float a 32 bit perchè non ci serve la precisione a 64 per un embedding)
+MATRICE = np.array([v["vettore"] for v in INDICE], dtype=np.float32)
+# trasformo ogni vettore di lunghezza 1, mantenendo la direzione, np.align genera la normale per ogni vettore, axis=1 dice di fare la divisione per ogni riga, e keepdims=True mantiene la forma a colonna, in modo da allineare la divisione riga per riga
+MATRICE /= np.linalg.norm(MATRICE, axis=1, keepdims=True)
 
-    words = re.findall(r"\w+", question.lower())  # estrae solo le sequenze di caratteri alfanumerici, scartando punteggiatura ed emoji
-    keys = [p for p in words if p not in STOPWORD and len(p) >= 3]
+print(f"Indice caricato: {len(INDICE)} coppie")
 
-    # -------------- Filtro di frequenza -----------------------------#
-    frequency = {}
-    for k in keys:
-        frequency[k] = sum(1 for pair in PAIRS if k in " ".join(pair["stimuli"]).lower())
-    keys = [k for k in keys if frequency[k] < len(PAIRS) * 0.05]  # se questa parola è presente nel meno del 5% delle coppie la tengo, sennò la scarto
-    # ----------------------------------------------------------------#
+def retrieval(question, k=8):
+    question_array = ollama.embed(model=MODELLO_EMBED, input=question)["embeddings"][0]
+    q = np.array(question_array, dtype=np.float32)
+    q /= np.linalg.norm(q)
+
+    similarity = MATRICE @ q  # moltiplicazione matrice per vettore ottenendo un vettore (visto che avevamo resto i vettori lunghi 1, non serve dividere per il prodotto delle due lunghezze perchè entrambe sono 1, quindi basta il prodotto scalare)
+    best_idx = np.argsort(similarity)[::-1][:k]   # ordina dando solo gli indici ordinati, [::-1] ci permette di invertire la lista, perchè argsort ordina in modo crescente ma noi vogliamo in ordine decrescente (dal + simile al - simile alla domanda) e prendiamo i primi k = 8
 
     results = []
+    for i in best_idx:
+        results.append({
+            "stimuli": INDICE[i]["stimuli"],
+            "reaction": INDICE[i]["reaction"]
+        })
+        print(f"  [debug] {similarity[i]:.3f}  {INDICE[i]["stimuli"]} {INDICE[i]["reaction"]}}}")
+    return results
 
-    for pair in PAIRS:
-        text = " ".join(pair["stimuli"]).lower()
-        points = sum(1 for k in keys if k in text)  # somma ogni volta che una chiave k delle chiavi viene trovata nel testo
-        if points > 0:
-            results.append((points, pair))
-
-    results.sort(key=lambda x: x[0], reverse=True)  # riordino in base al punteggio
-    best = [c for _, c in results[:50]]  # solo le 50 migliori
-
-    if not best:
-        best = random.sample(PAIRS, 20)
-
-    best_results = random.sample(best, min(20, len(best)))  # prendo 20 a caso dalle 50 migliori
-    return best_results
 
 def generate_prompt(best):
     examples = ""
-    for c in best:
-        examples += f"Stimoli: {c['stimuli']} --> Risposta tua: {c['reaction']}\n\n"
+    for i, c in enumerate(best, 1):
+        # c["stimuli"] è una lista del tipo: ["x: ciao", "y: stasera usciamo?"]
+        chat_context = "\n".join(c["stimuli"])
+        examples += f"--- ESEMPIO {i} ---\n{chat_context}\n[Risposta di {YOU}]: {c['reaction']}\n\n"
 
-    prompt = f"""Sei {YOU}, {CHARACTERISTIC}.
-DEVI SCRIVERE ESATTAMENTE COME LUI, RISPETTARE IL SUO MODO DI SCRIVERE, LA SUA PUNTEGGIATURA, MODI DI DIRE, TUTTO.
-Ecco come rispondi di solito:
-{examples}"""
+    prompt = f"""{CHARACTERISTIC}
+
+Ecco alcuni esempi reali di conversazioni di gruppo passate e di come hai risposto:
+
+{examples}--- CHAT ATTUALE ---
+Ora leggi i messaggi recenti nel gruppo qui sotto e genera SOLO la tua risposta come {YOU}."""
     return prompt
 
 history = []
@@ -69,16 +74,25 @@ while True:
     prompt = generate_prompt(best)
 
     messages = [{"role": "system", "content": prompt}]
-    messages.extend(history[-6:])  # i turni precedenti (una cronologia primitiva)
+    messages.extend(history[-4:])  # i turni precedenti (una cronologia primitiva)
     messages.append({"role": "user", "content": question})
 
     response = ollama.chat(
-        model=f"{YOUR_MODEL}",
+        model=YOUR_MODEL,
         messages=messages,
-        options={"temperature": 0.8}
+        options={
+            "temperature": 0.65,  # Più creatività umana
+            "stop": ["Utente:", "Esempio", "\n\n"]  # Ferma il modello se prova a simulare l'utente
+        }
     )
-    text = response["message"]["content"]
-    print(f"{YOU}: {text}")
+    text = response["message"]["content"].strip()
+
+    text = text.split("\n")[0]
+    for prefisso in [YOU + ":", "[tu]", "assistant:"]:
+        if text.lower().startswith(prefisso.lower()):
+            text = text[len(prefisso):].strip()
+
+    print(f"\n{YOU}: {text}\n")
 
     history.append({"role": "user", "content": question})
     history.append({"role": "assistant", "content": text})

@@ -11,5 +11,9 @@ __pycache__/
 
 *.db
 *.json
-!output_json/esempio_dati.json
+!output_json/pairs_example.json
 chat.txt
+
+.idea/
+data/
+input/
