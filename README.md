@@ -22,7 +22,7 @@ solo se la risposta è arrivata entro 180 secondi e se il messaggio precedente n
 **2. Indicizzazione (`embedding.py`)**
 Ogni stimolo viene trasformato in un vettore da 768 dimensioni (LOL) tramite un modello di embedding
 (`bge-m3`). Il risultato è un indice salvato su disco, da calcolare una volta
-sola (per 10.000 coppie ci vogliono circa 20 minuti sul mio PC -- AMD Ryzen 7 5700X 8-Core Processor (3.40 GHz) e AMD Radeon RX 6650 XT (8 GB) con 32,0 GB di RAM).
+sola (per 10.000 coppie ci vogliono circa 20 minuti sul mio PC --> (AMD Ryzen 7 5700X 8-Core Processor (3.40 GHz) e AMD Radeon RX 6650 XT (8 GB) con 32,0 GB di RAM).
 
 **3. Retrieval + generazione (`clone.py`)**
 La domanda viene vettorizzata e confrontata con tutto l'indice tramite
